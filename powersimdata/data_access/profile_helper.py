@@ -72,7 +72,10 @@ class ProfileHelper:
         """Returns available raw profile from blob storage.
 
         :param str grid_model: grid model.
-        :param str kind: *'demand'*, *'hydro'*, *'solar'* or *'wind'*.
+        :param str kind: *'demand'*, *'hydro'*, *'solar'*, *'wind'*,
+            *'demand_flexibility_up'*, *'demand_flexibility_dn'*,
+            *'demand_flexibility_duration'*, *'demand_flexibility_cost_up'*,
+            or *'demand_flexibility_cost_dn'*.
         :return: (*list*) -- available profile version.
         """
 
@@ -84,7 +87,10 @@ class ProfileHelper:
         """Returns available raw profile from local file.
 
         :param str grid_model: grid model.
-        :param str kind: *'demand'*, *'hydro'*, *'solar'* or *'wind'*.
+        :param str kind: *'demand'*, *'hydro'*, *'solar'*, *'wind'*,
+            *'demand_flexibility_up'*, *'demand_flexibility_dn'*,
+            *'demand_flexibility_duration'*, *'demand_flexibility_cost_up'*,
+            or *'demand_flexibility_cost_dn'*.
         :return: (*list*) -- available profile version.
         """
         profile_dir = fs.path.join(server_setup.LOCAL_DIR, "raw", grid_model)
