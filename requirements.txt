@@ -11,3 +11,4 @@ coverage
 pytest-cov
 fs
 fs.sshfs
+git+https://github.com/Breakthrough-Energy/fs-azureblob@main#egg=fs_azureblob
