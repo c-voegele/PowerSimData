@@ -1,10 +1,21 @@
 import os
 
 import fs
-import requests
-from tqdm.auto import tqdm
 
 from powersimdata.utility import server_setup
+
+blob_fs = fs.open_fs("azblob://besciences@profiles")
+
+
+def _get_profile_version(_fs, kind):
+    """Returns available raw profiles from the give filesystem
+
+    :param fs.base.FS _fs: filesystem instance
+    :param str kind: *'demand'*, *'hydro'*, *'solar'* or *'wind'*.
+    :return: (*list*) -- available profile version.
+    """
+    matching = [f for f in _fs.listdir(".") if kind in f]
+    return [f.lstrip(f"{kind}_").rstrip(".csv") for f in matching]
 
 
 class ProfileHelper:
@@ -30,42 +41,13 @@ class ProfileHelper:
 
         :param str file_name: profile csv.
         :param tuple from_dir: tuple of path components.
-        :return: (*str*) -- path to downloaded file.
         """
         print(f"--> Downloading {file_name} from blob storage.")
-        url_path = "/".join(from_dir)
-        url = f"{ProfileHelper.BASE_URL}/{url_path}/{file_name}"
-        dest = os.path.join(server_setup.LOCAL_DIR, *from_dir, file_name)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        resp = requests.get(url, stream=True)
-        content_length = int(resp.headers.get("content-length", 0))
-        with open(dest, "wb") as f:
-            with tqdm(
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                miniters=1,
-                total=content_length,
-            ) as pbar:
-                for chunk in resp.iter_content(chunk_size=4096):
-                    f.write(chunk)
-                    pbar.update(len(chunk))
-
-        return dest
-
-    @staticmethod
-    def parse_version(grid_model, kind, version):
-        """Parse available versions from the given spec.
-
-        :param str grid_model: grid model.
-        :param str kind: *'demand'*, *'hydro'*, *'solar'* or *'wind'*.
-        :param dict version: version information per grid model.
-        :return: (*list*) -- available profile version.
-        """
-        if grid_model in version and kind in version[grid_model]:
-            return version[grid_model][kind]
-        print("No %s profiles available." % kind)
-        return []
+        profile_dir = "/".join(from_dir)
+        local_fs = fs.open_fs(os.path.join(server_setup.LOCAL_DIR))
+        local_fs.makedirs(profile_dir, recreate=True)
+        path = fs.path.join(profile_dir, file_name)
+        fs.copy.copy_file(blob_fs, path, local_fs, path)
 
     @staticmethod
     def get_profile_version_cloud(grid_model, kind):
@@ -75,9 +57,8 @@ class ProfileHelper:
         :param str kind: *'demand'*, *'hydro'*, *'solar'* or *'wind'*.
         :return: (*list*) -- available profile version.
         """
-
-        resp = requests.get(f"{ProfileHelper.BASE_URL}/version.json")
-        return ProfileHelper.parse_version(grid_model, kind, resp.json())
+        bfs = blob_fs.opendir(f"raw/{grid_model}")
+        return _get_profile_version(bfs, kind)
 
     @staticmethod
     def get_profile_version_local(grid_model, kind):
@@ -87,7 +68,6 @@ class ProfileHelper:
         :param str kind: *'demand'*, *'hydro'*, *'solar'* or *'wind'*.
         :return: (*list*) -- available profile version.
         """
-        profile_dir = fs.path.join(server_setup.LOCAL_DIR, "raw", grid_model)
+        profile_dir = os.path.join(server_setup.LOCAL_DIR, "raw", grid_model)
         lfs = fs.open_fs(profile_dir)
-        matching = [f for f in lfs.listdir(".") if kind in f]
-        return [f.lstrip(f"{kind}_").rstrip(".csv") for f in matching]
+        return _get_profile_version(lfs, kind)
