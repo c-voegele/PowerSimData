@@ -172,41 +172,19 @@ class LocalDataAccess(DataAccess):
         self.fs.move(file_name, dest)
 
 
-class SSHDataAccess(DataAccess):
-    """Interface to a remote data store, accessed via SSH."""
+class RemoteDataAccess(DataAccess):
+    """Base class for DataAccess classes with a remote filesystem"""
 
-    _last_attempt = 0
-
-    def __init__(self, root=server_setup.DATA_ROOT_DIR):
+    def __init__(self, root):
         """Constructor"""
         super().__init__(root)
         self._fs = None
-        self._retry_after = 5
         self.local_root = server_setup.LOCAL_DIR
         self.local_fs = fs2.open_fs(self.local_root)
-        self.description = "server"
 
     @property
     def fs(self):
-        """Get or create the filesystem object, with attempts rate limited.
-
-        :raises IOError: if connection failed or still within retry window
-        :return: (*powersimdata.data_access.ssh_fs.WrapSSHFS) -- filesystem instance
-        """
-        if self._fs is None:
-            should_attempt = (
-                time.time() - SSHDataAccess._last_attempt > self._retry_after
-            )
-            if should_attempt:
-                try:
-                    self._fs = get_ssh_fs(self.root)
-                    return self._fs
-                except:  # noqa
-                    SSHDataAccess._last_attempt = time.time()
-            msg = f"Could not connect to server, will try again after {self._retry_after} seconds"
-            raise IOError(msg)
-
-        return self._fs
+        raise NotImplementedError
 
     def copy_from(self, file_name, from_dir=None):
         """Copy a file from data store to userspace.
@@ -218,7 +196,7 @@ class SSHDataAccess(DataAccess):
         from_path = self.join(from_dir, file_name)
         self._check_file_exists(from_path, should_exist=True)
 
-        print(f"Transferring {file_name} from server")
+        print(f"Transferring {file_name} from {self.description}")
         with TempFS() as tmp_fs:
             self.local_fs.makedirs(from_dir, recreate=True)
             tmp_fs.makedirs(from_dir, recreate=True)
@@ -245,8 +223,72 @@ class SSHDataAccess(DataAccess):
         to_path = self.join(to_dir, change_name_to)
         self._check_file_exists(to_path, should_exist=False)
 
-        print(f"Transferring {change_name_to} to server")
+        print(f"Transferring {change_name_to} to {self.description}")
         fs2.move.move_file(self.local_fs, file_name, self.fs, to_path)
+
+    def checksum(self, relative_path):
+        """Return the checksum of the file path
+
+        :param str relative_path: path relative to root
+        :return: (*str*) -- the checksum of the file
+        """
+        full_path = self.join(self.root, relative_path)
+        self._check_file_exists(relative_path)
+
+        return self.fs.checksum(full_path)
+
+    def execute_command_async(self, command):
+        raise NotImplementedError
+
+    def push(self, file_name, checksum, change_name_to=None):
+        raise NotImplementedError
+
+
+class BlobDataAccess(RemoteDataAccess):
+    def __init__(self, container):
+        super().__init__("/")
+        self._container = container
+        self.description = "blob storage"
+
+    @property
+    def fs(self):
+        if self._fs is None:
+            self._fs = fs2.open_fs(f"azblob://besciences@{self._container}")
+        return self._fs
+
+
+class SSHDataAccess(RemoteDataAccess):
+    """Interface to a remote data store, accessed via SSH."""
+
+    _last_attempt = 0
+
+    def __init__(self, root=server_setup.DATA_ROOT_DIR):
+        """Constructor"""
+        super().__init__(root)
+        self._retry_after = 5
+        self.description = "server"
+
+    @property
+    def fs(self):
+        """Get or create the filesystem object, with attempts rate limited.
+
+        :raises IOError: if connection failed or still within retry window
+        :return: (*powersimdata.data_access.ssh_fs.WrapSSHFS) -- filesystem instance
+        """
+        if self._fs is None:
+            should_attempt = (
+                time.time() - SSHDataAccess._last_attempt > self._retry_after
+            )
+            if should_attempt:
+                try:
+                    self._fs = get_ssh_fs(self.root)
+                    return self._fs
+                except:  # noqa
+                    SSHDataAccess._last_attempt = time.time()
+            msg = f"Could not connect to server, will try again after {self._retry_after} seconds"
+            raise IOError(msg)
+
+        return self._fs
 
     def execute_command_async(self, command):
         """Execute a command via ssh, without waiting for completion.
@@ -259,17 +301,6 @@ class SSHDataAccess(DataAccess):
         full_command = cmd_ssh + command
         process = Popen(full_command)
         return process
-
-    def checksum(self, relative_path):
-        """Return the checksum of the file path
-
-        :param str relative_path: path relative to root
-        :return: (*str*) -- the checksum of the file
-        """
-        full_path = self.join(self.root, relative_path)
-        self._check_file_exists(relative_path)
-
-        return self.fs.checksum(full_path)
 
     def push(self, file_name, checksum, change_name_to=None):
         """Push file to server and verify the checksum matches a prior value

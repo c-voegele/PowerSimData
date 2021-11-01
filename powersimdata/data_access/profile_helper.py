@@ -46,7 +46,7 @@ class ProfileHelper:
         profile_dir = "/".join(from_dir)
         local_fs = fs.open_fs(os.path.join(server_setup.LOCAL_DIR))
         local_fs.makedirs(profile_dir, recreate=True)
-        path = fs.path.join(profile_dir, file_name)
+        path = "/".join([profile_dir, file_name])
         fs.copy.copy_file(blob_fs, path, local_fs, path)
 
     @staticmethod
