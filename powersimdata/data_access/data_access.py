@@ -56,9 +56,28 @@ class DataAccess:
 
         return data
 
-    def write(self, filepath, data):
+    def write(self, filepath, data, save_local=True):
         """Write a file to data store.
 
+        :param str filepath: path to save data to, with extension either 'pkl', 'csv', or 'mat'.
+        :param (*pandas.DataFrame* or *dict*) data: data to save
+        :param bool save_local: whether a copy should also be saved to the local filesystem, if
+            such a filesystem is configured. Defaults to True.
+        """
+
+        self._check_file_exists(filepath, should_exist=False)
+
+        print("Writing %s" % filepath)
+
+        self._write(self.fs, filepath, data)
+
+        if save_local and self.local_fs is not None:
+            self._write(self.local_fs, filepath, data)
+
+    def _write(self, fs, filepath, data):
+        """Write a file to given data store.
+
+        :param fs fs: pyfilesystem to which to write data
         :param str filepath: path to save data to, with extension either 'pkl', 'csv', or 'mat'.
         :param (*pandas.DataFrame* or *dict*) data: data to save
         :raises ValueError: if extension is unknown.
@@ -66,11 +85,7 @@ class DataAccess:
 
         ext = os.path.basename(filepath).split(".")[-1]
 
-        self._check_file_exists(filepath, should_exist=False)
-
-        print("Writing %s" % filepath)
-
-        with self.local_fs.openbin(filepath, mode="w") as f:
+        with fs.openbin(filepath) as f:
             if ext == "pkl":
                 pickle.dump(data, f)
             elif ext == "csv":
@@ -79,9 +94,6 @@ class DataAccess:
                 savemat(f, data, appendmat=False)
             else:
                 raise ValueError("Unknown extension! %s" % ext)
-
-        if self.local_fs != self.fs:
-            fs2.copy.copy_file(self.local_fs, filepath, self.fs, filepath)
 
     def copy_from(self, file_name, from_dir):
         """Copy a file from data store to userspace.
@@ -194,7 +206,6 @@ class LocalDataAccess(DataAccess):
         super().__init__(root)
         self.description = "local machine"
         self.fs = fs2.open_fs(root)
-        self.local_fs = self.fs
 
     def copy_from(self, file_name, from_dir=None):
         """Copy a file from data store to userspace.
